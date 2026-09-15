@@ -16,4 +16,7 @@ ALLOWED_INTENTS = {
     "retail_diagnostic",
     "clarify",
     "refuse",
+    "query",
+    "explain",
 }
+

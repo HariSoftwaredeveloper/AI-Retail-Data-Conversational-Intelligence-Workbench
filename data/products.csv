@@ -1,0 +1,17 @@
+product_id,sku,name,category,brand,price,cost,stock_level
+PRD-001,SKU-1001, Classic Cotton Tee ,t-shirt,Nike Inc,$24.99,$10.00,120
+PRD-002,SKU-1002,Slim Fit Denim Jeans,jeans,Levi's,$59.50,$25.00,45
+PRD-003,SKU-1003,Pro Running Shoes,sneakers,Adidas AG,$119.00,$50.00,80
+PRD-004,SKU-1004,Wireless Earbuds,Elecronics,Sony,$89.99,$35.00,15
+PRD-005,SKU-1005,4K Smart TV 55-inch,Electronics,Samsung,$499.99,$280.00,8
+PRD-006,SKU-1006,Crewneck Fleece Hoodie,sweatshirt,Nike,$45.00,$18.00,60
+PRD-007,SKU-1007,Casual Oxford Shirt,shirt,Polo,$55.00,$22.00,0
+PRD-008,SKU-1008,Leather Laptop Backpack,Bags,SwissGear,$79.99,$30.00,25
+PRD-009,SKU-1009,Gaming Mechanical Keyboard,electronics,Logitech,$109.99,$45.00,30
+PRD-010,SKU-1010,Vintage Graphic Tee,T-Shirt,nike,$28.00,$11.00,90
+PRD-011,SKU-1011,Athletic Training Shorts,shorts,Adidas,$34.00,$14.00,50
+PRD-012,SKU-1012,Noise Cancelling Headphones,Electronics,Sony,$249.99,$110.00,12
+PRD-013,SKU-1013,Ultralight Rain Jacket,jacket,Columbia,$89.99,$40.00,22
+PRD-014,SKU-1014,Stainless Steel Water Bottle,Accessories,HydroFlask,$39.95,$15.00,150
+PRD-015,SKU-1015,Yoga Fitness Mat,Fitness,Manduka,$68.00,$28.00,35
+PRD-001,SKU-1001, Classic Cotton Tee ,t-shirt,Nike Inc,$24.99,$10.00,120

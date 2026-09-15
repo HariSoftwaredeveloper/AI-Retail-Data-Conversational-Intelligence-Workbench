@@ -6,3 +6,4 @@ pydantic>=2.6.0
 pytest>=8.0.0
 python-multipart>=0.0.9
 requests>=2.31.0
+google-genai>=2.0.0

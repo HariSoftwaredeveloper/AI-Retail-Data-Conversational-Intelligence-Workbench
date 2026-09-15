@@ -1,0 +1,11 @@
+customer_id,name,email,region,loyalty_tier
+CUST-201,Alice Johnson,alice.j@example.com,West,Gold
+CUST-202,Bob Smith,bob.smith@example.com,Central,Silver
+CUST-203,Charlie Davis,charlie.d@example.com,East,Platinum
+CUST-204,Dana Evans,dana.e@example.com,Central,Bronze
+CUST-205,Evan Wright,evan.w@example.com,West,Gold
+CUST-206,Fiona Green,fiona.g@example.com,South,Silver
+CUST-207,George Hall,george.h@example.com,East,Bronze
+CUST-208,Hannah King,hannah.k@example.com,West,Platinum
+CUST-209,Ian Lopez,ian.l@example.com,Central,Silver
+CUST-210,Julia Miller,julia.m@example.com,East,Gold

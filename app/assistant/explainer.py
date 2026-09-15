@@ -61,18 +61,26 @@ def format_grounded_answer(
         }
 
     top_item = preview[0]
-    metric_keys = [k for k in top_item.keys() if k not in plan.group_by]
-    primary_metric = metric_keys[0] if metric_keys else None
     primary_group = plan.group_by[0] if plan.group_by else list(top_item.keys())[0]
+    top_label = top_item.get(primary_group, "Record")
 
-    top_label = top_item.get(primary_group, "Top Record")
-    top_metric_val = top_item.get(primary_metric, "") if primary_metric else ""
+    # If it is a pure filter or record retrieval without group_by/aggregations
+    if plan.intent == "filter" or (not plan.group_by and not plan.metrics):
+        if len(preview) == 1:
+            details = [f"**{k}**: {v}" for k, v in top_item.items() if k != primary_group and v is not None]
+            summary = f"Found matching record in **{evidence.dataset_version}**: **{top_label}** ({', '.join(details[:4])})."
+        else:
+            summary = f"Found {len(preview)} matching record(s) in **{evidence.dataset_version}** ({evidence.row_count_considered} rows evaluated). Showing records below."
+    else:
+        metric_keys = [k for k in top_item.keys() if k not in plan.group_by]
+        primary_metric = metric_keys[0] if metric_keys else None
+        top_metric_val = top_item.get(primary_metric, "") if primary_metric else ""
 
-    summary = (
-        f"In **{evidence.dataset_version}** across {evidence.row_count_considered} records, "
-        f"**{top_label}** ranked highest with **{top_metric_val}** in {primary_metric or 'the metric'}. "
-        f"Showing top {len(preview)} records below."
-    )
+        summary = (
+            f"In **{evidence.dataset_version}** across {evidence.row_count_considered} records, "
+            f"**{top_label}** ranked highest with **{top_metric_val}** in {primary_metric or 'the metric'}. "
+            f"Showing top {len(preview)} records below."
+        )
 
     return {
         "summary": summary,

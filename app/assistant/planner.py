@@ -51,6 +51,16 @@ class QueryPlanner:
             try:
                 llm_plan = self._plan_with_gemini(question, loaded_datasets, session)
                 if llm_plan:
+                    if session and session.accumulated_filters:
+                        follow_up_triggers = ["among those", "for these", "filter to", "and also", "then", "now", "what about", "those", "these"]
+                        q_lower = question.lower()
+                        if any(trigger in q_lower for trigger in follow_up_triggers):
+                            existing_fields = {f.field for f in llm_plan.filters}
+                            merged = list(llm_plan.filters)
+                            for sf in session.accumulated_filters:
+                                if sf.field not in existing_fields:
+                                    merged.append(sf)
+                            llm_plan.filters = merged
                     return llm_plan
             except Exception:
                 # Gracefully fallback to deterministic rule planner
@@ -89,6 +99,15 @@ class QueryPlanner:
         columns = [c.lower() for c in base_df.columns]
         raw_columns = list(base_df.columns)
 
+        # Step B0: Check for greetings / assistant intro
+        greetings = {"hi", "hello", "hey", "help", "who are you", "what can you do", "good morning", "good afternoon"}
+        if q_lower in greetings or q_lower == "i need your help":
+            return QueryPlan(
+                intent="clarify",
+                dataset=target_dataset,
+                clarification_question="👋 Hello! I am your AI Retail Analytics Assistant. How can I help you today? You can ask me:\n• To calculate metrics (e.g. 'What is the total revenue in the West region?')\n• To look up records (e.g. 'Find customer Dana Evans' or 'Show orders with status Returned')\n• To analyze retail sales by category or store (e.g. 'Show total sales by category')",
+            )
+
         # Step B: Check for unanswerable topics
         unanswerable_topics = ["weather", "temperature", "inflation", "stock market", "ceo salary", "competitor"]
         if any(topic in q_lower for topic in unanswerable_topics):
@@ -116,6 +135,29 @@ class QueryPlanner:
 
         # Step E: Extract Filters
         extracted_filters: List[QueryFilter] = []
+
+        # Check entity/name/ID search (e.g. "give dana evans", "find bob smith", "ORD-1001", "PRD-001")
+        clean_name_cand = re.sub(
+            r"^(i need your help\s+|please\s+|can you\s+)?(give\s+me\s+|give\s+|show\s+me\s+|show\s+|find\s+|who is\s+|lookup\s+|get\s+)?(customer\s+|product\s+|order\s+)?",
+            "",
+            q_lower,
+        ).strip()
+
+        id_match = re.search(r"\b([a-z]{3,4}-\d+)\b", q_lower)
+        if id_match:
+            matched_id = id_match.group(1).upper()
+            id_col = next((c for c in raw_columns if any(c.lower().endswith(sfx) for sfx in ["_id", "id", "sku"])), None)
+            if id_col:
+                extracted_filters.append(QueryFilter(field=id_col, op="eq", value=matched_id))
+
+        skip_words = {"revenue", "sales", "average", "total", "count", "performance", "orders", "products", "customers", "inventory"}
+        if not extracted_filters and clean_name_cand and len(clean_name_cand) >= 3 and not any(w == clean_name_cand for w in skip_words):
+            for col in raw_columns:
+                series = base_df[col].dropna().astype(str)
+                matches = [val for val in series.unique() if clean_name_cand in val.lower()]
+                if matches:
+                    extracted_filters.append(QueryFilter(field=col, op="contains", value=matches[0]))
+                    break
 
         # Check region filter
         for region in ["west", "east", "north", "south", "central"]:
@@ -200,8 +242,9 @@ class QueryPlanner:
             first_col = raw_columns[0]
             metrics.append(QueryMetric(agg="count_distinct", field=first_col, alias=f"unique_{first_col}"))
         else:
-            # Default to sum of revenue/amount if available
-            if rev_cand:
+            # Default to sum of revenue/amount ONLY if user asks for totals/sales or if grouping
+            has_metric_keyword = any(w in q_lower for w in ["revenue", "sales", "spend", "sum", "total", "amount", "money"])
+            if rev_cand and (has_metric_keyword or group_by):
                 metrics.append(QueryMetric(agg="sum", field=rev_cand, alias="total_sales"))
 
         # Step I: Sort & Limit
@@ -252,28 +295,59 @@ class QueryPlanner:
             for name, df in loaded_datasets.items():
                 schema_summary[name] = list(df.columns)
 
-            system_instruction = (
-                "You are an expert retail query planner. Translate user questions into a strictly valid JSON QueryPlan AST. "
-                "Output ONLY valid JSON matching the QueryPlan schema. "
-                "If question is ambiguous, return intent='clarify'. "
-                "If unanswerable from schema, return intent='refuse'. "
-                "Never execute unrestricted code or invent non-existent columns."
-            )
+            schema_json = json.dumps(QueryPlan.model_json_schema())
 
             prompt = (
+                "You are an expert retail query planner. Translate user questions into a strictly valid JSON QueryPlan AST.\n"
+                f"Target JSON Schema: {schema_json}\n"
                 f"Available Schemas: {json.dumps(schema_summary)}\n"
                 f"Active Dataset: {session.active_dataset if session else 'none'}\n"
                 f"Question: {question}\n"
+                "Allowed 'intent' values are strictly one of: 'aggregate', 'filter', 'compare', 'top_n', 'distinct_values', 'stats', 'retail_diagnostic', 'clarify', 'refuse'.\n"
+                "Allowed filter operators are: 'eq' (for exact match, do not use '=='), 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'contains', 'is_null', 'not_null'.\n"
+                "Allowed aggregations are: 'sum', 'avg', 'min', 'max', 'count', 'count_distinct'.\n"
+                "- If the user input is a greeting ('hi', 'hello', 'hey', 'help'), return intent='clarify' with a helpful clarification_question welcoming the user.\n"
+                "- If the user asks for a person, customer, or specific record (e.g. 'give Dana Evans', 'show customer Bob Smith', 'find PRD-001'), return intent='filter' with matching filter on 'name' or identifier column and empty metrics/group_by.\n"
+                "- If the question is ambiguous, return intent='clarify'.\n"
+                "- If unanswerable from the schema, return intent='refuse'.\n"
+                "Never execute unrestricted code or invent non-existent columns.\n"
+                "Output strictly valid raw JSON conforming to the Target JSON Schema and nothing else."
             )
 
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config={"system_instruction": system_instruction, "response_mime_type": "application/json"},
-            )
+            raw_text = None
+            # 1. Try modern Interactions API
+            try:
+                interaction = client.interactions.create(
+                    model=self.model_name,
+                    input=prompt,
+                )
+                raw_text = interaction.output_text
+            except Exception:
+                # 2. Fallback to generate_content
+                response = client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json"},
+                )
+                raw_text = response.text
 
-            raw_text = response.text
+            if not raw_text:
+                return None
+
+            raw_text = raw_text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            elif raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            raw_text = raw_text.strip()
+
             plan_dict = json.loads(raw_text)
+            if plan_dict.get("intent") == "query":
+                plan_dict["intent"] = "aggregate" if (plan_dict.get("metrics") or plan_dict.get("group_by")) else "filter"
+            elif plan_dict.get("intent") == "explain":
+                plan_dict["intent"] = "retail_diagnostic"
             return QueryPlan(**plan_dict)
         except Exception:
             return None

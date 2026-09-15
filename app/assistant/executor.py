@@ -7,6 +7,14 @@ from app.core.models import QueryPlan, ExecutionEvidence
 from app.retail.relationships import safe_join
 
 
+def _to_clean_numeric(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+    cleaned = series.astype(str).str.replace(r"[$,€£\s]", "", regex=True)
+    cleaned = cleaned.str.replace(r"^\((.*)\)$", r"-\1", regex=True)
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
 def execute_plan(
     plan: QueryPlan,
     loaded_datasets: Dict[str, pd.DataFrame]
@@ -60,13 +68,13 @@ def execute_plan(
             else:
                 mask = series != val
         elif op == "gt":
-            mask = pd.to_numeric(series, errors="coerce") > float(val)
+            mask = _to_clean_numeric(series) > float(val)
         elif op == "gte":
-            mask = pd.to_numeric(series, errors="coerce") >= float(val)
+            mask = _to_clean_numeric(series) >= float(val)
         elif op == "lt":
-            mask = pd.to_numeric(series, errors="coerce") < float(val)
+            mask = _to_clean_numeric(series) < float(val)
         elif op == "lte":
-            mask = pd.to_numeric(series, errors="coerce") <= float(val)
+            mask = _to_clean_numeric(series) <= float(val)
         elif op == "in":
             if isinstance(val, list):
                 val_set = {str(v).lower() for v in val}
@@ -105,14 +113,16 @@ def execute_plan(
 
             # Map aggregation string to pandas operation
             if agg == "sum":
-                result_df[field] = pd.to_numeric(result_df[field], errors="coerce").fillna(0.0)
+                result_df[field] = _to_clean_numeric(result_df[field]).fillna(0.0)
                 agg_dict[alias] = pd.NamedAgg(column=field, aggfunc="sum")
             elif agg in ("avg", "mean"):
-                result_df[field] = pd.to_numeric(result_df[field], errors="coerce")
+                result_df[field] = _to_clean_numeric(result_df[field])
                 agg_dict[alias] = pd.NamedAgg(column=field, aggfunc="mean")
             elif agg == "min":
+                result_df[field] = _to_clean_numeric(result_df[field])
                 agg_dict[alias] = pd.NamedAgg(column=field, aggfunc="min")
             elif agg == "max":
+                result_df[field] = _to_clean_numeric(result_df[field])
                 agg_dict[alias] = pd.NamedAgg(column=field, aggfunc="max")
             elif agg == "count":
                 agg_dict[alias] = pd.NamedAgg(column=field, aggfunc="count")
@@ -142,7 +152,7 @@ def execute_plan(
             elif agg == "count_distinct":
                 val = int(result_df[field].nunique())
             else:
-                num_s = pd.to_numeric(result_df[field], errors="coerce").dropna()
+                num_s = _to_clean_numeric(result_df[field]).dropna()
                 if agg == "sum":
                     val = round(float(num_s.sum()), 2)
                 elif agg in ("avg", "mean"):

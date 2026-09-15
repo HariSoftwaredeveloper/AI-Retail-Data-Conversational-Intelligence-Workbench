@@ -17,6 +17,12 @@ def validate_plan(
     errors: List[str] = []
     sanitized = plan.model_copy(deep=True)
 
+    # Normalize common intent aliases
+    if sanitized.intent == "query":
+        sanitized.intent = "aggregate" if (sanitized.metrics or sanitized.group_by) else "filter"
+    elif sanitized.intent == "explain":
+        sanitized.intent = "retail_diagnostic"
+
     # 1. Intent validation
     if sanitized.intent not in ALLOWED_INTENTS:
         errors.append(f"Disallowed plan intent: '{sanitized.intent}'")
@@ -46,7 +52,20 @@ def validate_plan(
         available_columns.update(right_df.columns)
 
     # 4. Filters validation
+    op_map = {
+        "==": "eq",
+        "=": "eq",
+        "equals": "eq",
+        "!=": "neq",
+        "<>": "neq",
+        ">": "gt",
+        ">=": "gte",
+        "<": "lt",
+        "<=": "lte",
+    }
     for flt in sanitized.filters:
+        if flt.op in op_map:
+            flt.op = op_map[flt.op]
         if flt.field not in available_columns:
             errors.append(f"Filter field '{flt.field}' does not exist in schema.")
         if flt.op not in ALLOWED_OPERATORS:
@@ -58,7 +77,16 @@ def validate_plan(
             errors.append(f"Group by field '{gb}' does not exist in schema.")
 
     # 6. Metrics validation
+    agg_map = {
+        "average": "avg",
+        "mean": "avg",
+        "distinct_count": "count_distinct",
+        "unique": "count_distinct",
+        "total": "sum",
+    }
     for metric in sanitized.metrics:
+        if metric.agg in agg_map:
+            metric.agg = agg_map[metric.agg]
         if metric.agg not in ALLOWED_AGGREGATIONS:
             errors.append(f"Aggregation '{metric.agg}' is not allowed.")
         if metric.field not in available_columns and metric.field != "*":
